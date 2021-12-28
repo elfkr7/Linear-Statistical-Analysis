@@ -1,0 +1,531 @@
+---
+title: "STAT 8561 Linear Statistical Analysis Final Project: Comprehensive Analyses of Tumor Size Data under Different Treatements  "
+author: "Elif KIR"
+date: "12/09/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE, warning=FALSE, message=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Libraries
+
+```{r, warning=FALSE, message=FALSE}
+library(leaps)
+library(MASS)
+library(olsrr)
+library(MPV)
+library(stats)
+library(car)
+library(pls)
+library(tidyverse)
+set.seed(1923)
+```
+
+## Uploading Datasets
+
+```{r Upload, warning=FALSE, message=FALSE, fig.width=10}
+data_tumor_raw=read.table("tumor_size.txt")
+colnames(data_tumor_raw)=c("y","x1","x2","x3","x4","x5") #name columns of dataset
+data_tumor=data_tumor_raw  #a copy of original data set to make operations on
+colnames(data_tumor)=c("y","x1","x2","x3","x4","x5") #name columns of dataset
+
+head(data_tumor)
+
+```
+
+***Explanation***
+
+In data set, Y is the tumor size (in mm) after 4 different treatments. The variables are defined as follows:
+
+X1 = the amount of dosage for treatment 1
+X2 = the amount of dosage for treatment 2
+X3 = the amount of dosage for treatment 3
+X4 = the coded amount of dosage for treatment 4
+X5 = Three different types of tumor.
+
+
+## (a)	Use all your knowledge to build the “best” regression model and estimate all coefficients of the model (notice that your score will depend on how well you can use the various methods that are taught in this class).
+
+```{r a, warning=FALSE, message=FALSE, fig.width=10}
+##Strategy for Variable Selection and Model Building
+
+##Step 1: Fit the largest model possible to the data and perform thorough analysis
+
+data_tumor$x5=as.factor(data_tumor$x5) ##since x5 is an indicator variable
+model=lm(y~.,data=data_tumor)
+summary(model)
+anova(model)##MSRES 187.
+
+"Comment: Intercept and the regressors of x1,x3,x4,x52,x53 are statistically significant and adjusted R2 is 86.7%.Pvalue is almost 0 and this says regression is signifcant."
+
+##Step 2: Residual Analysis
+
+#Normal Probability Plot of Residuals
+Rstudent_residual = rstudent(model)
+sorted_Rstudent_residual=sort(Rstudent_residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_Rstudent_residual))
+for(i in 1:length(sorted_Rstudent_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_Rstudent_residual)
+}
+
+plot(x=sorted_Rstudent_residual,y=p_i[1,],xlim =c(-4,4),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_Rstudent_residual))
+qqnorm(sorted_Rstudent_residual,xlim = c(-4,4),ylim = c(-4,4),main='Normal Q-Q Plot of the Residuals')
+qqline(sorted_Rstudent_residual)
+
+"Comment: Deviations exist in the upper and the lower tails. There are problems with the normality of the residuals."
+
+#Plot of Residuals against the Fitted Values
+
+yhat = model$fit 
+plot(x=yhat,y=Rstudent_residual)
+abline(0,0)
+
+"Comment: First there is a nonlinear pattern in the graph and resiudals for some observations are out of a certain band such as of -2,2. It can be say that these observations having studentized residuals are greater than 2 and smaller than -2 are potential outliers and need further analyses. Also, nonlinear pattern in the graph indicates transformation on the regressors and/or response variable may be needed to deal with this nonlinear pattern in the graph."
+
+#Check Partial Regression Graph 
+avPlots(model = model,marginal.scale = T,id=T)
+
+"Comment: In Added-Variable plots, there is a problem with linearity for x1 and x2 variables since all the points are located at almost the same point. This may indicate a sort of collinearity. X4 also needs further analyses."
+
+#Pair plots of x1 and x2
+
+plot(data_tumor$x1,data_tumor$x2)
+
+"Comment: Almost a perfect linearity between x1 and x2."
+
+#Pair plots of x1 and x4
+
+plot(data_tumor$x1,data_tumor$x4)
+
+"Comment: There is a linear pattern to some extent between x1 and x4. To understand the seriousness of multicollinearity, further tests are needed."
+
+#Pair plots of x2 and x4
+
+plot(data_tumor$x2,data_tumor$x4)
+
+"Comment: There is a linear pattern to some extent between x1 and x4. To understand the seriousness of multicollinearity, further tests are needed."
+
+##Step 3: Transformation
+
+"Comment: Since we have problem with the normally assumption of the residual (nonlinear pattern in the graph of residual vs fitted values and deviations in tails in the normality plot of the residuals), we should try to transform the response variable."
+
+# Boxcox Model
+
+bc = boxcox(object = model)
+lambda = bc$x[which.max(bc$y)]
+lambda
+
+#Apply lambda to the response variable
+
+data_tumor$y=(data_tumor$y)^lambda
+model2=lm(y~.,data=data_tumor)
+summary(model2) ##Adjusted R square is 87.3%.
+anova(model2)##MSRES 16.3.
+
+#Redo Residual Plot Analysis to look for any improvement regarding the problem
+
+#Normal Probability Plot of Residuals
+Rstudent_residual = rstudent(model2)
+sorted_Rstudent_residual=sort(Rstudent_residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_Rstudent_residual))
+for(i in 1:length(sorted_Rstudent_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_Rstudent_residual)
+}
+
+plot(x=sorted_Rstudent_residual,y=p_i[1,],xlim =c(-4,4),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_Rstudent_residual))
+
+"Comment: It seems like deviations in the tails are healed. Except for some points located around tails and having deviations but in general the normality seems okay. For those points we need to do outlier detection analyses."
+
+#Plot of Residuals against the Fitted Values
+
+yhat = model2$fit 
+plot(x=yhat,y=Rstudent_residual)
+abline(0,0)
+
+"Comment: We see potential outlier points having R student residuals more than 2 and smaller than -2. Also, we can observe nonlinear pattern existed in the previous graph has been improved .Most of the points are located around r student=0 line without any significant pattern between the band of -2 and 2."
+
+#To check relations of response variables and regressors and transformation on regressor x4.
+
+plot(data_tumor$x1,data_tumor$y)
+plot(data_tumor$x2,data_tumor$y)
+plot(data_tumor$x3,data_tumor$y)
+plot(data_tumor$x4,data_tumor$y)## non linear relationship between x4 and y. Taking square of x4 may help.
+
+data_tumor$x4=data_tumor$x4^2
+model3=lm(y~.,data=data_tumor)
+summary(model3) ##Adjusted R square is 93.7%.
+anova(model3)##MSRES 8.1.
+
+
+##Step 4: Outlier Analysis
+
+#Redo Residual Plot Analyses to comment on potantial outliers
+Rstudent_residual = rstudent(model3)
+sorted_Rstudent_residual=sort(Rstudent_residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_Rstudent_residual))
+for(i in 1:length(sorted_Rstudent_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_Rstudent_residual)
+}
+
+plot(x=sorted_Rstudent_residual,y=p_i[1,],xlim =c(-4,4),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_Rstudent_residual))
+
+#Plot of Residuals against the Fitted Values
+
+yhat = model3$fit 
+plot(x=yhat,y=Rstudent_residual)
+abline(0,0)
+#Store potential outlier observations to use soon
+obs_potential_outliers=Rstudent_residual[which(abs(Rstudent_residual) > 2.25)]
+obs_potential_outliers
+
+"Comment: Based on the graph, the cut off value to distinguih potential outliers can be set as band of 2.25 in terms of absolute values. Observations out of the band of abs(2.25) could be named as potential outlier. To get to know them better, move forward to leverage and influential points analyses."
+
+##Step 5: Leverage and influential Points Analysis
+
+summary(influence.measures(model3))
+
+"Comment: It looks like the measures of cook.d ,dfbetas,and hat are pretty normal but the measures of diffits and covratios claim influential points. Cutoff for the dffits is 2*sqrt(p/n) and based on the cutoff value, observations of 52,59,83,119,and 127 are potential influential points. All of them have also high residuals based on the outlier detection analysis. Cutoff value for covratio is COVRATIO_i < 1 − 3*p / n or COVRATIO_i > 1 +3*p / n   ( we can trust this ratio since in our case n=130>3*p=7). Observations are out of the range detecting influential points are displayed in the list with star. OVerlaping observation for both measures(dffits and covraito) are 52,59,83,and 119, which are potential influential points. Alll of them have high residuals."
+
+#Cutoff values to evaluate influential point analyses
+cutoff_dffits=2*sqrt(7/nrow(data_tumor))
+cutoff_dffits
+cutoff_covr_lower_boundary=1-3*7/130
+cutoff_covr_lower_boundary
+cutoff_covr_upper_boundary=1+3*7/130
+cutoff_covr_upper_boundary
+
+
+##Step 5.B: Alternative Model Analysis without Potential Outlier Points
+obs_num_outl=as.numeric(names(obs_potential_outliers))
+obs_num_outl
+
+data_tumor_without_outlier=data_tumor[-obs_num_outl,]
+
+model4=lm(y~.,data_tumor_without_outlier)
+summary(model4)##Adjusted R2 is 95.9% and coefficients of variables are pretty similar to ones in the model before potential outlier observatios were removed.
+anova(model4) ##MRES 4.6
+
+#Normal Probability Plot of Residuals
+Rstudent_residual = rstudent(model4)
+sorted_Rstudent_residual=sort(Rstudent_residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_Rstudent_residual))
+for(i in 1:length(sorted_Rstudent_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_Rstudent_residual)
+}
+
+plot(x=sorted_Rstudent_residual,y=p_i[1,],xlim =c(-4,4),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_Rstudent_residual))
+
+"Comment: Except for one point having Rstudent residual around 4, the resiudals fit normality pretty well."
+
+#Plot of Residuals against the Fitted Values
+
+yhat = model4$fit 
+plot(x=yhat,y=Rstudent_residual)
+abline(0,0)
+
+##Step 6: All Possible Regression Models
+
+"Comment: Since p=7<30,  all possible regressions is feasible."
+##The Best Regression Models
+
+#Result of all possible regressions
+all_poss_reg=ols_step_all_possible(model3)
+all_poss_reg
+
+all_poss_reg[which.min(all_poss_reg$cp),]#The full model has the smallest Cp. But it would be more reasonable to check adjusted R square.
+
+all_poss_reg[which.max(all_poss_reg$adjr),] #The full model has the highest Adjusted Rsquare.
+
+#Compare press score of the model that has been selected as the best and the second best model's one.
+PRESS(model3)
+PRESS(lm(y~x1+x3+x4+x5,data=data_tumor))
+
+"Comment: The best model which has the smallest MAllow's Cp, the highest adj R2, and the lower PRESS Score is y=B0+B1*x1+B2*x2+B3*x3+B4*x4+B5*x52+B6*x53+E. The best model's Cp is 5, adj R2 is 93.7% and PRESS stat is 1143.369. The second best model with regressors x1,x3,x4 and x5 has PRESS SCORE 1212.582."
+
+#Check Stepwise algorithm
+
+stepwise_algorithm=ols_step_both_p(model3,pent = 0.05,prem = 0.05)
+stepwise_algorithm
+
+"Comment: Stepwise algorithm uses F statistic as a threshold and F statistics are calculated using MSRES statistics.  Stepwise algorithm also chose the same best model with all regressors."
+
+```
+
+## (b)	Diagnose the multicollinearity of the full model, which includes all interaction terms.
+
+```{r b, warning=FALSE, message=FALSE, fig.width=10}
+
+##Covariance matrix of the original data set
+cov(data_tumor_raw[-1])
+
+"Comment: Based on the covariance matrix, we see that x1 and x2 has an important correlation."
+
+model_with_interactions=lm(y~.^5,data=data_tumor) #Get all interactions included in the full model
+summary(model_with_interactions)
+ols_coll_diag(model_with_interactions)
+
+"Comment: Seven condition index exceeds 1000 so there is  serious multicollinearity in the data. There are other 15 condition indices greater than 100. For vifs, especially for x1 and x2 are super high. We can expect interaction term would have high variance inflation function but the smallest vif is around 400. We can conclude the data including interaction terms has serious mulitcollinearity issue."
+
+```
+
+
+## (c)	Do ridge regression using all regressors in the full model.
+
+
+```{r ridge, warning=FALSE, message=FALSE, fig.width=10}
+
+"Comment: Since the multicollinearity issue is detected, Ridge regression can be used to deal with this problem."
+
+#Run ridge regression to find an optimal lambda
+#plot(model_ridge)
+model_ridge=lm.ridge(model_with_interactions,lambda=seq(0, 0.1, 0.0001)) 
+MASS::select(model_ridge)
+
+#Refit the model with the best lambda = 0.0113
+model_ridge_best=lm.ridge(model_with_interactions,lambda=0.0113)
+coef(model_ridge_best)
+
+#############################################################################
+#Expand the original data set by including interaction terms
+data_tumor_full = data.frame(model.matrix(~(.)^5,data_tumor[-1])) 
+data_tumor_full=data.frame(data_tumor$y,data_tumor_full)[-2] ##drop intercept
+#############################################################################
+
+#Find fitted value for each observation using rigde model
+predicted = model_ridge_best$ym +
+  scale(data_tumor_full[,-1], center = model_ridge_best$xm,
+        scale = model_ridge_best$scales) %*%
+  model_ridge_best$coef
+
+#Metrics for ridge regression
+SSRES_ridge = sum((predicted - data_tumor_full$data_tumor.y)^2)
+SSRES_ridge
+
+MSRES_ridge = SSRES_ridge/(nrow(data_tumor_full)-ncol(data_tumor_full)-1)
+MSRES_ridge
+
+SST_ridge = sum((data_tumor$y - mean(data_tumor$y))^2)
+SST_ridge
+
+SSR_ridge=SST_ridge-SSRES_ridge
+SSR_ridge
+
+R2_ridge= (1-SSRES_ridge/SST_ridge)
+R2_ridge
+
+adjR2_ridge = 1 -  ((SSRES_ridge/(nrow(data_tumor_full)-ncol(data_tumor_full)-1))/(SST_ridge/(nrow(data_tumor_full)-1)))
+adjR2_ridge
+
+MSE_ridge= sqrt(mean((predicted - data_tumor_full$data_tumor.y)^2))
+MSE_ridge
+
+"Comment: These metrics can be helpful in comparing ridge regression performance with others.'"
+```
+
+## (d)	Do principal component regression using all regressors in the full model.
+
+```{r PCA, warning=FALSE, message=FALSE, fig.width=10}
+#Run Principal Component Regression
+model_pcr <- pcr(data_tumor.y~., data = data_tumor_full, scale = TRUE)
+summary(model_pcr)
+
+#List SSRES_pcr and adjusted Rsquare for each regression with different number of components
+for (i in 1:47){
+predicted_pcr=predict(model_pcr,data_tumor_full[-1],ncomp = i)
+
+#Metrics for PCR regression
+SSRES_pcr = sum((predicted_pcr - data_tumor_full$data_tumor.y)^2)
+print(SSRES_pcr)
+
+MSRES_pcr = SSRES_pcr/(nrow(data_tumor_full)-i)
+MSRES_pcr
+
+SST_pcr = sum((data_tumor_full$data_tumor.y - mean(data_tumor_full$data_tumor.y))^2)
+SST_pcr
+
+SSR_pcr=SST_pcr-SSRES_pcr
+SSR_pcr
+
+R2_pcr= (1-SSRES_pcr/SST_pcr)
+R2_pcr
+
+adjR2_pcr = 1 -  ((SSRES_pcr/(nrow(data_tumor_full)-i))/(SST_pcr/(nrow(data_tumor_full)-1)))
+print(adjR2_pcr)
+
+MSE_pcr= sqrt(mean((predicted_pcr - data_tumor_full$data_tumor.y)^2))
+MSE_pcr
+
+}
+
+"Comment: Select ncomp=7 based on x variance approach. Seven components are explaining the variability of the total variance with a propotion of 95%."
+
+predicted_pcr=predict(model_pcr,data_tumor_full[-1],ncomp = 7)
+
+##metrics for PCR regression
+SSRES_pcr = sum((predicted_pcr - data_tumor_full$data_tumor.y)^2)
+SSRES_pcr
+
+MSRES_pcr = SSRES_pcr/(nrow(data_tumor_full)-7)
+MSRES_pcr
+
+SST_pcr = sum((data_tumor_full$data_tumor.y - mean(data_tumor_full$data_tumor.y))^2)
+SST_pcr
+
+SSR_pcr=SST_pcr-SSRES_pcr
+SSR_pcr
+
+R2_pcr= (1-SSRES_pcr/SST_pcr)
+R2_pcr
+
+adjR2_pcr = 1 -  ((SSRES_pcr/(nrow(data_tumor_full)-7))/(SST_pcr/(nrow(data_tumor_full)-1)))
+adjR2_pcr
+
+MSE_pcr= sqrt(mean((predicted_pcr - data_tumor_full$data_tumor.y)^2))
+MSE_pcr
+
+"Comment: These metrics can be helpful in comparing PCR regression performance with others'"
+
+```
+## (e)	Compare the models selected in (a), (c) and (d). You may use any methods you learn in this class to make the comparison.
+
+```{r Elimination, warning=FALSE, message=FALSE,fig.width=10}
+#First, redo three models' residual analyses.
+
+##Model 3: PCR REgression Residual Plot Analysis
+
+residual = (data_tumor_full$data_tumor.y-predicted_pcr)
+sorted_residual=sort(residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_residual))
+for(i in 1:length(sorted_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_residual)
+}
+
+plot(x=sorted_residual,y=p_i[1,],xlim =c(-6,6),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_residual))
+
+
+#Plot of Residuals against the Fitted Values
+
+plot(x=predicted_pcr,y=residual)
+abline(0,0)
+
+"Comment: There is no problem with the normality assumption except for some outliers in the tails. But, considering that errors displayed in the graph are not standardized,  in general, it seems good."
+
+##Model 2: Ridge Regression Residual Plot Analysis
+
+residual = (data_tumor_full$data_tumor.y-predicted)
+sorted_residual=sort(residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_residual))
+for(i in 1:length(sorted_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_residual)
+}
+
+plot(x=sorted_residual,y=p_i[1,],xlim =c(-1,1),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_residual))
+
+
+#Plot of Residuals against the Fitted Values
+
+plot(x=predicted,y=residual)
+abline(0,0)
+
+"Comment: There is some problem with the normality especially in the tails. But, considering that errors displayed in the graph are not standardized,  in general, it seems okay. Notice variance is much more smaller."
+
+##Model 1: The Best Regression Residual Plot Analysis
+
+Rstudent_residual = rstudent(model3)
+sorted_Rstudent_residual=sort(Rstudent_residual)
+
+p_i=matrix(NA,nrow=1,ncol=length(sorted_Rstudent_residual))
+for(i in 1:length(sorted_Rstudent_residual)){
+  p_i[[i]]=(i-0.5)/length(sorted_Rstudent_residual)
+}
+
+plot(x=sorted_Rstudent_residual,y=p_i[1,],xlim =c(-4,4),ylim=c(0,1),main='Normal Probability Plot of the Residuals')
+abline(lm(p_i[1,]~sorted_Rstudent_residual))
+
+#Plot of Residuals against the Fitted Values
+
+yhat = model3$fit 
+plot(x=yhat,y=Rstudent_residual)
+abline(0,0)
+
+"Comment: There is problem with the normality assumption. Deviations exist in tails in the normality graph. Notice even though the v shaped is healed, there is a slight nonlinear pattern in the fitted value graph."
+
+##Comparison: 
+
+"Since there is problem with the normality in the best model from part a, further comparisons will be conducted only between Ridge Model Analysis and PCR Regression Model. To compare performance of these two methods, the criteria which can be benefited from would be Mean Square Error."
+
+MSE_ridge
+MSE_pcr
+
+##Final Decision
+
+"Comment: Even though Ridge Regression Model has smaller MSE and 99.9% adjusted Rsquare, in my opinion PCR Regression Model with MSE 2.6 and adjusted Rsquare 95% is more reasonable. Such a small MSE 0.25 for Ridge Regression Model points out some potential problems in terms of sustainability and 99.9% Rsquare is not realistic. We know that Ridge Regression estimators are biased and it seems to minimize MSE, Ridge Regression Model might put a good deal of bias to estimation of coefficients. On the other hand, PCA regression seems more reasonable. Considering multicollinearity problem in the original data set, PCA would be a good choice to handle it. Also, residual analysis of PCA is pretty good with the assumptions regarding normality."
+
+```
+## (f)	Conclusion: What is the final model? What variables are important, and what are not? Are the signs of the estimated coefficients correct? Are they all significant? What does the model tell us? Include some prediction exercises. Final conclusion in words.
+
+```{r Cluster, warning=FALSE, message=FALSE, fig.width=10}
+
+##Prediction Examples by splitting the data set into estimation and prediction parts
+set.seed(1923)
+
+#Randomly assign some of the observations to estimation part
+train_=sample(c(1:dim(data_tumor_full)[1]), dim(data_tumor_full)[1]*0.7)
+
+#Form estimation and prediction parts
+estimation=data_tumor_full[train_, ]
+prediction=data_tumor_full[-train_, ]
+
+#Use the best model selected in part e to train the estimation part
+model_pcr_train = pcr(data_tumor.y~., data = estimation, scale = TRUE)
+
+summary(model_pcr_train)
+"Comment: 95% of variance is explained by the first 6 component in the small sample size but the difference between 7th and 6th components is so small in explaining the variance. To stay alinged with the part e, ncom=7 will be kept the same."
+
+test_predicted=predict(model_pcr_train,prediction[-1],ncomp = 7) #Prediction
+
+##Metrics for PCR regression based prediction
+MSE_pcr= sqrt(mean((test_predicted - prediction$data_tumor.y)^2))
+MSE_pcr
+
+coefs_pcr=as.data.frame(model_pcr_train$coefficients)
+coefs_pcr[,1:7] #coefficients of first 7 components
+
+#To see coefficients of components in the regression:
+pca1=prcomp(estimation[-1],scale. = T)
+scores_pca1=pca1$x[,1:7]
+reg_pca=lm(estimation$data_tumor.y~scores_pca1)
+summary(reg_pca) #adjR2 95%
+
+anova(reg_pca)
+
+#Predicted R square
+pred_r_squared <- function(linear.model) {
+  lm.anova <- anova(linear.model)
+  tss <- sum(lm.anova$'Sum Sq')
+  pred.r.squared <- 1-PRESS(linear.model)/(tss)
+  return(pred.r.squared)
+}
+
+pred_r_squared((reg_pca))
+
+```
+***FINAL COMMENT:***
+Comment: Final model is PCA regression using first 7 component as features. To understand variables' contribution, PCA components could be interpreted. For exmaple, first component represents the effect of tumor type 2, which is x52==1 in the data. The second component represents x1 and x2 against other features. The important point here is that PCA behaves x1 and x2 as a only one feature. It is probably because of their multicollinearity. Based on other components we can conclude variable x4 has a weak contribution to the model,which is the variable of coded amount of dosage for treatment 4.On the other hand, during my all analyses, I end up with x3 is a significant variable. 
+
+In regression components, 5 and 7 are not significant. Adjusted Rsquare is 95%, which is pretty good. Model gives stable results. We see that MSE for prediction results is 2.99, which is really small just like MSE in part e. So we can conclude that model is reliable for extrapolation as well as interpolation. Predicted adjusted Rsquare is around 94%, which also shows the model's performance in prediction. Finally, the model tries to use all information in the one of the most efficient ways and handle the hugest problem in the data, multicollinearity. We can conclude that based on the tumor type, the amount of the dosage from different treatments matters since they have a correlation with the size of the tumor! 
+
